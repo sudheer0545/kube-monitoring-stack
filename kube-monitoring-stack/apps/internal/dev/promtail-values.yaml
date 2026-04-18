@@ -1,0 +1,72 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: loki-promtail
+  namespace: monitoring
+spec:
+  chart:
+    spec:
+      version: ">=1.0.0" 
+  values:
+  
+    ## enables variable interpolation in config
+    extraArgs:
+      - '-config.expand-env=true'
+
+    ## use secretproviderclass to mount synced secret from keyvault and add as environment var
+    extraEnv:
+      - name: LOKI_BASIC_AUTH_USER
+        valueFrom:
+          secretKeyRef:
+            key: LOKI_BASIC_AUTH_USER
+            name: loki-gateway-creds
+      - name: LOKI_BASIC_AUTH_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            key: LOKI_BASIC_AUTH_PASSWORD
+            name: loki-gateway-creds
+    extraVolumeMounts:
+      - name: loki-gateway-secrets
+        mountPath: "/etc/loki_secrets"
+    extraVolumes:
+      - name: loki-gateway-secrets
+        csi: 
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: "monitoring-promtail-auth-provider"
+
+    ## enable config to be managed via helm chart values
+    config:
+      enabled: true
+
+      ## push logs via the loki gateway 
+      clients:
+        - url: https://gateway.loki.devops.core.sis.tv/loki/api/v1/push
+          basic_auth:
+            username: "${LOKI_BASIC_AUTH_USER}"
+            password: "${LOKI_BASIC_AUTH_PASSWORD}"
+          external_labels:
+            kube_cluster: internal-dev-uks-aks-1
+
+      ## limit the line length
+      snippets:
+        extraLimitsConfig: |
+          max_line_size: 16kb
+          max_line_size_truncate: true
+
+    ## ensure promtail runs on system nodes
+    tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+        effect: NoSchedule
+
+    ## resource limits
+    resources:
+      requests:
+        memory: 100Mi
+        cpu: 50m
+      limits:
+        memory: 400Mi
+        cpu: 400m

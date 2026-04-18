@@ -1,0 +1,175 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: grafana-mimir
+  namespace: monitoring
+spec:
+  chart:
+    spec:
+      version: "^5.2"        #caret range, equivalent to: >=5.2, < 6.0.0
+  values:
+    global:
+      extraEnv:
+        - name: AZURE_STORAGE_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: AZURE_STORAGE_ACCESS_KEY
+              name: mimir-csi-kv-secret
+
+    querier:
+      replicas: 1
+      extraVolumeMounts:
+        - name: mimir-storage-secrets
+          mountPath: "/etc/mimir_secrets"
+      extraVolumes:
+        - name: mimir-storage-secrets
+          csi: 
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "mimir-kv-access"
+
+    ingester:
+      replicas: 1
+      persistentVolume:
+        size: 20Gi
+      topologySpreadConstraints: {}
+      zoneAwareReplication:
+        enabled: false
+      resources:
+        limits:
+          memory: 12Gi
+        requests: 
+          cpu: 1
+          memory: 4Gi
+      extraVolumeMounts:
+        - name: mimir-storage-secrets
+          mountPath: "/etc/mimir_secrets"
+      extraVolumes:
+        - name: mimir-storage-secrets
+          csi: 
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "mimir-kv-access"
+
+    ruler:
+      extraVolumeMounts:
+        - name: mimir-storage-secrets
+          mountPath: "/etc/mimir_secrets"
+      extraVolumes:
+        - name: mimir-storage-secrets
+          csi: 
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "mimir-kv-access"
+    
+    compactor:
+      replicas: 1
+      persistentVolume: 
+        size: 20Gi
+      extraVolumeMounts:
+        - name: mimir-storage-secrets
+          mountPath: "/etc/mimir_secrets"
+      extraVolumes:
+        - name: mimir-storage-secrets
+          csi: 
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "mimir-kv-access"
+
+    store_gateway:
+      replicas: 1
+      topologySpreadConstraints: {}
+      zoneAwareReplication:
+        enabled: false
+      extraVolumeMounts:
+        - name: mimir-storage-secrets
+          mountPath: "/etc/mimir_secrets"
+      extraVolumes:
+        - name: mimir-storage-secrets
+          csi: 
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "mimir-kv-access"
+
+    ## this config gets merged with the raw mimir config provided by the helm chart
+    mimir:
+      structuredConfig:
+        common:
+          storage:
+            backend: azure
+            azure: 
+              account_key: "${AZURE_STORAGE_ACCESS_KEY}"
+              account_name:  sisdevopsmetrics00000001
+              endpoint_suffix: "blob.core.windows.net"
+        blocks_storage:
+          backend: azure
+          azure:
+            container_name: mimir-blocks
+        ruler_storage:
+          azure:
+            container_name: mimir-ruler
+        
+        ### TODO: remove these when scaling up for production
+        ingester:
+          ring:
+            replication_factor: 1
+
+        limits:
+          ## increase max global series from default 150_000
+          max_global_series_per_user: 2000000
+
+          ## increase distributor ingestion from default 10_000/s
+          ingestion_rate: 75000
+
+          ## increase from 200_000
+          ingestion_burst_size: 600000
+
+          ## storage retention of metrics (31d)
+          compactor_blocks_retention_period: 744h
+
+    ## move from deprecated nginx reverse proxy to gateway deployment
+    ## https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-to-unified-proxy-deployment/
+    gateway:
+      ingress:
+        enabled: true
+        annotations: 
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+        hosts:
+          - host: gateway.mimir.devops.core.sis.tv
+            paths:
+              - path: /
+                pathType: Prefix 
+        tls:
+          - secretName: mimir-gateway-tls
+            hosts:
+              - gateway.mimir.devops.core.sis.tv
+      enabledNonEnterprise: true 
+      replicas: 1
+
+    metaMonitoring:
+      serviceMonitor:
+        enabled: true
+      grafanaAgent:
+        enabled: true
+        installOperator: false
+        logs:
+          remote:
+            url: "https://gateway.loki.devops.core.sis.tv/loki/api/v1/push"
+            auth:
+              username: "lokigatewayclient"
+              passwordSecretName: "metamonitoring-credentials"
+              passwordSecretKey: "loki-api-key"
+        metrics:
+          remote:
+            url: "https://gateway.mimir.devops.core.sis.tv/api/v1/push"
+      ## adds mimir recording and alerting rules mixin for prometheus operator
+      prometheusRule:
+        enabled: true
+        mimirRules: true
+        mimirAlerts: true

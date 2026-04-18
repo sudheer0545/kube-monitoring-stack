@@ -1,0 +1,187 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: grafana-tempo
+  namespace: monitoring
+spec:
+  chart:
+    spec:
+      ## tilde range, equivalent to >= 1.33.0, < 1.34.0
+      version: "~1.33.0"
+
+  values:
+    ## Env var for storage access is projected into each component
+    global:
+      extraEnv:
+        - name: AZURE_STORAGE_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: AZURE_STORAGE_ACCESS_KEY
+              name: tempo-csi-kv-secret
+
+    ## Azure Storage Account config
+    storage:
+      trace:
+        backend: azure
+        azure:
+          container_name: tempo-traces
+          storage_account_name: sisdevopstempo0000000001
+          storage_account_key: ${AZURE_STORAGE_ACCESS_KEY}
+
+    ## Each component needs to reference the secretproviderclass so
+    ## that env var secret is available in pod to use for config expansion
+    distributor:
+      extraArgs:
+        - "-config.expand-env=true"
+      extraVolumeMounts:
+        - name: tempo-storage-secrets
+          mountPath: /etc/tempo_secrets
+      extraVolumes:
+        - name: tempo-storage-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: tempo-kv-access
+
+    compactor:
+      extraArgs:
+        - "-config.expand-env=true"
+      extraVolumeMounts:
+        - name: tempo-storage-secrets
+          mountPath: /etc/tempo_secrets
+      extraVolumes:
+        - name: tempo-storage-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: tempo-kv-access
+
+    ingester:
+      persistence:
+        enabled: true
+        size: 20Gi
+        storageClass: managed-csi
+      resources:
+        limits:
+          memory: 8Gi
+        requests:
+          cpu: 500m
+          memory: 4Gi
+      extraArgs:
+        - "-config.expand-env=true"
+      extraVolumeMounts:
+        - name: tempo-storage-secrets
+          mountPath: /etc/tempo_secrets
+      extraVolumes:
+        - name: tempo-storage-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: tempo-kv-access
+
+    querier:
+      extraArgs:
+        - "-config.expand-env=true"
+      extraVolumeMounts:
+        - name: tempo-storage-secrets
+          mountPath: /etc/tempo_secrets
+      extraVolumes:
+        - name: tempo-storage-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: tempo-kv-access
+
+    queryFrontend:
+      extraArgs:
+        - "-config.expand-env=true"
+      extraVolumeMounts:
+        - name: tempo-storage-secrets
+          mountPath: /etc/tempo_secrets
+      extraVolumes:
+        - name: tempo-storage-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: tempo-kv-access
+
+    ## Gateway sits behind an ingress resource in the same way
+    ## that Mimir and Loki gateways are configured
+    gateway:
+      enabled: true
+      ingress:
+        enabled: true
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+        hosts:
+          - host: gateway.tempo.devops.core.sis.tv
+            paths:
+              - path: /
+                pathType: Prefix
+        ingressClassName: nginx
+        tls:
+          - hosts:
+              - gateway.tempo.devops.core.sis.tv
+            secretName: tempo-gateway-tls
+      resources:
+        limits:
+          cpu: 150m
+          memory: 100Mi
+        requests:
+          cpu: 20m
+          memory: 30Mi
+
+    ##############
+    ##  TRACES
+    ##############
+    traces:
+      jaeger:
+        grpc:
+          # -- Enable Tempo to ingest Jaeger GRPC traces
+          enabled: false
+          # -- Jaeger GRPC receiver config
+          receiverConfig: {}
+        thriftBinary:
+          # -- Enable Tempo to ingest Jaeger Thrift Binary traces
+          enabled: false
+          # -- Jaeger Thrift Binary receiver config
+          receiverConfig: {}
+        thriftCompact:
+          # -- Enable Tempo to ingest Jaeger Thrift Compact traces
+          enabled: false
+          # -- Jaeger Thrift Compact receiver config
+          receiverConfig: {}
+        thriftHttp:
+          # -- Enable Tempo to ingest Jaeger Thrift HTTP traces
+          enabled: false
+          # -- Jaeger Thrift HTTP receiver config
+          receiverConfig: {}
+      zipkin:
+        # -- Enable Tempo to ingest Zipkin traces
+        enabled: false
+        # -- Zipkin receiver config
+        receiverConfig: {}
+      otlp:
+        http:
+          # -- Enable Tempo to ingest Open Telemetry HTTP traces
+          enabled: true
+          # -- HTTP receiver advanced config
+          receiverConfig: {}
+        grpc:
+          # -- Enable Tempo to ingest Open Telemetry GRPC traces
+          enabled: true
+          # -- GRPC receiver advanced config
+          receiverConfig: {}
+      opencensus:
+        # -- Enable Tempo to ingest Open Census traces
+        enabled: false
+        # -- Open Census receiver config
+        receiverConfig: {}
+      # -- Enable Tempo to ingest traces from Kafka. Reference: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/kafkareceiver
+      kafka: {}

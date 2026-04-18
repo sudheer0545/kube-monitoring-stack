@@ -1,0 +1,37 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: otel-collector
+  namespace: monitoring
+spec:
+  interval: 5m
+  install:
+    remediation:
+      retries: 3
+  releaseName: otel-collector
+  chart:
+    spec:
+      chart: opentelemetry-collector
+      sourceRef:
+        kind: HelmRepository
+        name: open-telemetry
+
+  ## base helm values applied to all overlays
+  values:
+    ## using daemonset so that collector is always
+    ## running on every node in the cluster.
+    mode: daemonset
+
+    ## image and command override must be specified in
+    ## values as the chart does not provide a default.
+    image:
+      repository: otel/opentelemetry-collector-k8s
+    command:
+      name: otelcol-k8s
+
+    ## kubernetesAttributes preset is used to enrich
+    ## telemetry with additional pod information
+    presets:
+      kubernetesAttributes:
+        enabled: true

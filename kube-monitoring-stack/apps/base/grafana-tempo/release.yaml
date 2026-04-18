@@ -1,0 +1,19 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: grafana-tempo
+  namespace: monitoring
+spec:
+  interval: 5m
+  install:
+    remediation:
+      retries: 3
+  releaseName: tempo
+  chart:
+    spec:
+      chart: tempo-distributed
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+

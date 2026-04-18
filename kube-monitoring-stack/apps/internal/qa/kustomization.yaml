@@ -1,0 +1,35 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: not-important
+resources:
+  - ../../base/prometheus-stack
+  - ../../base/loki-promtail
+  - ../../base/kubernetes-event-exporter
+  - ../../base/otel-collector
+patches:
+  - path: prometheus-values.yaml
+    target:
+      group: helm.toolkit.fluxcd.io
+      version: v2beta1
+      kind: HelmRelease
+      name: prometheus-stack
+  - path: promtail-values.yaml
+    target:
+      group: helm.toolkit.fluxcd.io
+      version: v2beta1
+      kind: HelmRelease
+      name: loki-promtail
+  - path: otel-collector-values.yaml
+    target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: otel-collector
+  - path: kubernetes-event-exporter-values.yaml
+    target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: kubernetes-event-exporter

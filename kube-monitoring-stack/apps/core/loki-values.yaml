@@ -1,0 +1,193 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: grafana-loki
+  namespace: monitoring
+spec:
+  chart:
+    spec:
+      version: "~5"     # >= 5, < 6
+  values:
+    loki:
+      auth_enabled: false
+
+      storage:
+        type: azure 
+        bucketNames: 
+          chunks: chunks
+          ruler: ruler
+        azure:
+          accountName: sisdevopsloki00000000001
+          accountKey: ${AZURE_STORAGE_ACCESS_KEY}
+
+      schemaConfig:
+        configs:
+          - from: "2022-01-11"
+            index:
+              period: 24h
+              prefix: loki_index_
+            object_store: azure
+            schema: v12
+            store: boltdb-shipper
+
+      compactor:
+        retention_enabled: true
+        retention_delete_delay: 2h
+        retention_delete_worker_count: 100
+        delete_request_store: azure
+        working_directory: /var/loki/data/retention
+
+      query_scheduler:
+        max_outstanding_requests_per_tenant: 32000
+      
+      frontend:
+        ## log expensive queries
+        log_queries_longer_than: 5s
+        ## max number of outstanding requests per tenant per frontend (loki datasource)
+        max_outstanding_per_tenant: 4096
+
+      ## limits config values https://grafana.com/docs/enterprise-logs/latest/config/loki-config-reference/#limits_config
+      limits_config:
+        ## Retention period to apply to stored data, only applies if retention_enabled
+        ## is true in the compactor config.
+        retention_period: 744h  # 31 days
+
+        ## interval by which long queries are split for parallelism
+        split_queries_by_interval: 30m
+
+        ## increase ingestion rate
+        ingestion_rate_mb: 10
+        ingestion_burst_size_mb: 15
+
+        ## increase backend query timeout to 5 min
+        query_timeout: 300s
+
+      ## increase server read and idle timeouts to 5 min
+      server:
+        http_server_read_timeout: 300s
+        http_server_idle_timeout: 300s
+
+    # the writer mounts a secret provided by the secretProviderClass
+    # this is added as env variable along with an extra arg to expand 
+    # vars when config is read. 
+    write:
+      extraArgs:
+        - '-config.expand-env=true'
+      extraEnv:
+        - name: AZURE_STORAGE_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: AZURE_STORAGE_ACCESS_KEY
+              name: loki-csi-kv-secret
+      extraVolumeMounts:
+        - name: loki-storage-secrets
+          mountPath: "/etc/loki_secrets"
+      extraVolumes:
+        - name: loki-storage-secrets
+          csi: 
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "monitoring-kv-access"
+      resources:
+        requests:
+          cpu: 300m
+          memory: 2000Mi
+        limits:
+          cpu: 2
+          memory: 4200Mi
+      
+
+    read:
+      extraArgs:
+        - '-config.expand-env=true'
+      extraEnv:
+        - name: AZURE_STORAGE_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: AZURE_STORAGE_ACCESS_KEY
+              name: loki-csi-kv-secret
+      extraVolumeMounts:
+        - name: loki-storage-secrets
+          mountPath: "/etc/loki_secrets"
+      extraVolumes:
+        - name: loki-storage-secrets
+          csi: 
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "monitoring-kv-access"
+      resources:
+        requests:
+          cpu: 500m
+          memory: 2500Mi
+        limits:
+          cpu: 3
+          memory: 5000Mi
+
+
+    backend:
+      extraArgs:
+        - '-config.expand-env=true'
+      extraEnv:
+        - name: AZURE_STORAGE_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: AZURE_STORAGE_ACCESS_KEY
+              name: loki-csi-kv-secret
+      extraVolumeMounts:
+        - name: loki-storage-secrets
+          mountPath: "/etc/loki_secrets"
+      extraVolumes:
+        - name: loki-storage-secrets
+          csi: 
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "monitoring-kv-access"
+      resources:
+        requests:
+          cpu: 400m
+          memory: 300Mi
+        limits:
+          cpu: 1
+          memory: 1000Mi
+
+    gateway:
+      ## supply htpasswd hash for basic auth
+      basicAuth:
+        enabled: true
+        htpasswd: lokigatewayclient:$apr1$2fvX54zl$TNcbmEYOAWjpAUQAqN/Se.
+      ingress:
+        annotations: 
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+        hosts:
+          - host: gateway.loki.devops.core.sis.tv
+            paths:
+              - path: /
+                pathType: Prefix  
+        tls:
+          - secretName: loki-gateway-tls
+            hosts:
+              - gateway.loki.devops.core.sis.tv
+      resources:
+        requests:
+          cpu: 100m
+          memory: 100Mi
+        limits:
+          cpu: 1
+          memory: 1000Mi
+
+    ## disable self-monitoring for loki since the LogsInstance CRD from the Grafana
+    ## Agent operator is currently incompatible when auth is enabled on the gateway 
+    test:
+      enabled: false
+    monitoring:
+      serviceMonitor:
+        metricsInstance:
+          enabled: false
+      selfMonitoring:
+        enabled: false
+      lokiCanary:
+        enabled: false

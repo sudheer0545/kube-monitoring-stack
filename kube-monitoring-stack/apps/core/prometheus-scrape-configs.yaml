@@ -1,0 +1,190 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: prometheus-stack
+  namespace: monitoring
+spec:
+  values:
+    prometheus:
+      prometheusSpec:
+        ## additional scrape configs are defined here
+        ## follows prometheus configuration format
+        ## https://prometheus.io/docs/prometheus/latest/configuration/configuration/#scrape_config
+        additionalScrapeConfigs:
+        ## blackbox uptime probe
+        - job_name: blackbox
+          metrics_path: /probe
+          params:
+            module: [http_2xx]
+          static_configs:
+          - targets:
+            - https://h2hggl.com
+            - https://sis.tv
+            - https://49s.co.uk
+            - https://editor.sis.tv
+            - https://trader.sis.tv/SISTrader/
+          relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: target
+          - target_label: __address__
+            replacement: blackbox-exporter-prometheus-blackbox-exporter.monitoring:9115
+
+        - job_name: apim_appGateway_expiry_monitor
+          metrics_path: /probe
+          params:
+            module: [http_2xx]
+          static_configs:
+          - targets:
+            - https://cgportal.sis.tv
+            - https://sisstatsapim.dev.sis.tv
+            - https://shared-prod-uks-apim-1.azure-api.net
+          relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: target
+          - target_label: __address__
+            replacement: blackbox-exporter-prometheus-blackbox-exporter.monitoring:9115
+
+        ## sistrader metrics
+        - job_name: sistrader
+          metrics_path: /metrics
+          scheme: https
+          static_configs:
+          - targets:
+            - trader.sis.tv
+
+        ## ProFORM Metrics UAT
+        - job_name: ProFORM_UAT
+          metrics_path: /actuator/prometheus
+          scheme: https
+          static_configs:
+          - targets:
+            - racelab-mapper-service-shard-dogs.internal.uat.sis.tv
+            - racelab-racecard-feed-gateway.internal.uat.sis.tv
+            - sis-event-aggregator.internal.uat.sis.tv
+            - racelab-mapper-service-shard-dogs.internal.uat.sis.tv
+            - racelab-mapper-service-shard-horses.internal.uat.sis.tv
+            - proform-feed-gateway.internal.uat.sis.tv
+            - racelab-data-services-persistence.internal.uat.sis.tv
+            - sis247-proform-ingester.internal.uat.sis.tv
+            - sis-event-cache.internal.uat.sis.tv
+            - racelab-event-cache.internal.uat.sis.tv
+          relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: application
+
+        ## ProFORM Metrics Prod
+        - job_name: ProFORM_Prod
+          metrics_path: /actuator/prometheus
+          scheme: https
+          static_configs:
+          - targets:
+            - sis-event-cache.internal.sis.tv
+            - racelab-mapper-service-shard-dogs.internal.sis.tv
+            - racelab-mapper-service-shard-horses.internal.sis.tv
+            - racelab-racecard-feed-gateway-shard-dogs.internal.sis.tv
+            - racelab-racecard-feed-gateway-shard-horses.internal.sis.tv
+            - racelab-event-cache.internal.sis.tv
+            - sis247-proform-ingester.internal.sis.tv
+            - proform-feed-gateway-shard-dogs.internal.sis.tv
+            - proform-feed-gateway.internal.sis.tv
+            - racelab-data-services-persistence.internal.sis.tv
+          relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: application
+            
+        ## Competitive Gaming
+        - job_name: competitive_gaming
+          metrics_path: /actuator/prometheus
+          scheme: https
+          static_configs:
+          - targets:
+            - cg-reference-data.cg.qa.sis.tv
+            - cg-event-days.cg.qa.sis.tv
+          relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: application
+          - source_labels: [__param_target, application]
+            regex: .*\.(dev|qa|uat|staging|prod)\.sis\.tv
+            replacement: ${1}
+            target_label: environment
+            action: replace
+
+        ## IBMMQ9 metrics dev
+        - job_name: MQ9_Dev
+          metrics_path: /metrics
+          scheme: http
+          static_configs:
+          - targets:
+            - ibmmq-dks-qm01.ad.sis.tv:8172
+
+        ## IBMMQ9 metrics QA
+        - job_name: MQ9_QA
+          metrics_path: /metrics
+          scheme: http
+          static_configs:
+          - targets:
+            - ibmmq-sks-qm01.ad.sis.tv:8172
+            - ibmmq-sks-qm01.ad.sis.tv:8173
+            - ibmmq-sks-qm01.ad.sis.tv:8174
+
+        ## IBMMQ9 metrics UAT
+        - job_name: MQ9_UAT
+          metrics_path: /metrics
+          scheme: http
+          static_configs:
+          - targets:
+            - ibmmq-sks-qm02.ad.sis.tv:8172
+            - ibmmq-sks-qm02.ad.sis.tv:8173
+            - ibmmq-sks-qm02.ad.sis.tv:8174
+
+        ## IBMMQ9 metrics CAT
+        - job_name: MQ9_CAT
+          metrics_path: /metrics
+          scheme: http
+          static_configs:
+          - targets:
+            - ibmmq-sks-qm03.ad.sis.tv:8172
+            - ibmmq-sks-qm03.ad.sis.tv:8173
+            - ibmmq-sks-qm03.ad.sis.tv:8174
+            - ibmmq-sks-qm03.ad.sis.tv:8175
+
+        ## IBMMQ9 metrics PROD
+        - job_name: MQ9_PROD
+          metrics_path: /metrics
+          scheme: http
+          static_configs:
+          - targets:
+            - ibmmq-pks-qm01.ad.sis.tv:8172
+            - ibmmq-pks-qm02.ad.sis.tv:8173
+
+        ## Red Hat AMQ Metrics 
+        - job_name: RH_AMQ
+          metrics_path: /metrics
+          scheme: http
+          static_configs:
+          - targets:
+            - amq.247internal.master.qa.sis.tv:8161
+            - amq.247internal.master.qa.sis.tv:8162
+            - amq.247external.master.qa.sis.tv:8171
+            - amq.247external.master.qa.sis.tv:8172
+
+        - job_name: RH_AMQ_CG
+          metrics_path: /metrics
+          scheme: http
+          static_configs:
+          - targets:
+            - rdhamq-pks-bk01.ad.sis.tv:8191
+            - rdhamq-pks-bk03.ad.sis.tv:8191
+            - rdhamq-sks-bk01.ad.sis.tv:8183
+            - rdhamq-sks-bk01.ad.sis.tv:8184
+            - rdhamq-sks-bk02.ad.sis.tv:8183
+            - rdhamq-sks-bk03.ad.sis.tv:8184
+            - rdhamq-dks-bk03.ad.sis.tv:8191

@@ -1,0 +1,48 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kubernetes-event-exporter
+  namespace: monitoring
+spec:
+  values:
+    ## Specify tag of custom image in ACR.
+    ## Base contains repository and registry details
+    image:
+      tag: 1.8.0
+
+    config:
+      logLevel: info
+      logFormat: json
+
+      maxEventAgeSeconds: 90
+      metricsNamePrefix: event_exporter_
+
+      receivers:
+        - name: "log-dump"
+          file:
+            path: "/dev/stdout"
+            layout:
+              message: "{{ .Message }}"
+              reason: "{{ .Reason }}"
+              type: "{{ .Type }}"
+              count: "{{ .Count }}"
+              objectName: "{{ .InvolvedObject.Name }}"
+              objectKind: "{{ .InvolvedObject.Kind }}"
+              namespace: "{{ .Namespace }}"
+              component: "{{ .Source.Component }}"
+              host: "{{ .Source.Host }}"
+              firstSeen: "{{ .FirstTimestamp }}"
+              lastSeen: "{{ .LastTimestamp }}"
+
+      route:
+        routes:
+          - match:
+              - receiver: "log-dump"
+
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+        labels:
+          release: prometheus

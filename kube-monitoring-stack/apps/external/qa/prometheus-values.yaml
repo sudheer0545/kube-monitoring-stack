@@ -1,0 +1,62 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: prometheus-stack
+  namespace: monitoring
+spec:
+  chart:
+    spec:
+      version: "72.1.1"  
+  values:
+    grafana:
+      enabled: false
+      ingress:
+        enabled: false
+      persistence:
+        enabled: false
+
+    alertmanager:
+      alertmanagerSpec:
+        resources:
+          requests:
+            memory: 30Mi
+            cpu: 5m
+          limits: 
+            memory: 160Mi
+      ingress:
+        annotations: 
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+        hosts: 
+          - alertmanager.external.qa.sis.tv  
+        tls:
+          - secretName: alertmanager-tls
+            hosts:
+              - alertmanager.external.qa.sis.tv
+
+    prometheus:
+      prometheusSpec:
+
+        ## labels added to any time-series when communicating with external systems
+        externalLabels:
+          kube_cluster: external-qa-uks-aks-1
+        
+        ##push metrics through mimir gateway
+        remoteWrite:
+          -  url: https://gateway.mimir.devops.core.sis.tv/api/v1/push
+
+        resources:
+          requests:
+            memory: 800Mi
+            cpu: 100m
+          limits: 
+            memory: 1500Mi
+      ingress:
+        annotations: 
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+        hosts: 
+          - prometheus.external.qa.sis.tv          
+        tls:
+          - secretName: prometheus-tls
+            hosts:
+            - prometheus.external.qa.sis.tv

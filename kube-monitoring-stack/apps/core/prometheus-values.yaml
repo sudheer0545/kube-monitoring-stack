@@ -1,0 +1,289 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: prometheus-stack
+  namespace: monitoring
+spec:
+  chart:
+    spec:
+      version: "^66.2" #caret range, equivalent to: >=66.2, < 67.0.0
+  values:
+    ## alertmanager config
+    alertmanager:
+      alertmanagerSpec:
+        resources:
+          requests:
+            memory: 50Mi
+            cpu: 50m
+          limits:
+            memory: 160Mi
+      ingress:
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+        hosts:
+          - alertmanager.devops.core.sis.tv
+        tls:
+          - secretName: alertmanager-tls
+            hosts:
+              - alertmanager.devops.core.sis.tv
+
+    ## Relabelings required for self monitoring
+    kubelet:
+      serviceMonitor:
+        cAdvisorRelabelings:
+          - action: replace
+            replacement: loki
+            targetLabel: cluster
+          - targetLabel: metrics_path
+            sourceLabels:
+              - "__metrics_path__"
+          - targetLabel: "instance"
+            sourceLabels:
+              - "node"
+
+    kube-state-metrics:
+      prometheus:
+        monitor:
+          relabelings:
+            - action: replace
+              replacement: loki
+              targetLabel: cluster
+            - targetLabel: "instance"
+              sourceLabels:
+                - "__meta_kubernetes_pod_node_name"
+
+    prometheus-node-exporter:
+      prometheus:
+        monitor:
+          relabelings:
+            - action: replace
+              replacement: loki
+              targetLabel: cluster
+            - targetLabel: "instance"
+              sourceLabels:
+                - "__meta_kubernetes_pod_node_name"
+
+    ## additional rules for custom records
+    additionalPrometheusRulesMap:
+      rule-name:
+        groups:
+          - name: loki-rules
+            rules:
+              - record: job:loki_request_duration_seconds_bucket:sum_rate
+                expr: sum(rate(loki_request_duration_seconds_bucket[1m])) by (le, job)
+              - record: job_route:loki_request_duration_seconds_bucket:sum_rate
+                expr: sum(rate(loki_request_duration_seconds_bucket[1m])) by (le, job, route)
+              - record: node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate
+                expr: sum(rate(container_cpu_usage_seconds_total[1m])) by (node, namespace, pod, container)
+
+    ## potentially needed for meta-monitoring
+    # defaultRules:
+    #   additionalRuleLabels:
+    #     cluster: loki
+
+    ## prometheus config
+    prometheus:
+      prometheusSpec:
+        ## labels added to any time-series when communicating with external systems
+        externalLabels:
+          kube_cluster: devops-core-uks-aks-1
+
+        ##push metrics through mimir gateway
+        remoteWrite:
+          - url: https://gateway.mimir.devops.core.sis.tv/api/v1/push
+
+        ## resources
+        resources:
+          requests:
+            memory: 1500Mi
+            cpu: 150m
+          limits:
+            memory: 2500Mi
+      ingress:
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+        hosts:
+          - prometheus.devops.core.sis.tv
+        tls:
+          - secretName: prometheus-tls
+            hosts:
+              - prometheus.devops.core.sis.tv
+
+    ## grafana config
+    grafana:
+      ingress:
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+        hosts:
+          - grafana.devops.core.sis.tv
+        tls:
+          - secretName: grafana-tls
+            hosts:
+              - grafana.devops.core.sis.tv
+
+      # OAuth config for Azure IdP
+      # registered Azure AD app name: grafana-core-ui
+      #
+      # client_id and client_secret will be injected via the following environment vars respectively:
+      # GF_AUTH_AZUREAD_CLIENT_ID & GF_AUTH_AZUREAD_CLIENT_SECRET
+      grafana.ini:
+        server:
+          root_url: https://grafana.devops.core.sis.tv
+        azure:
+          managed_identity_enabled: true
+          managed_identity_client_id: 0f4358c5-c2d0-47a5-8405-f47e11c41bc3
+        auth.azuread:
+          enabled: true
+          name: SIS
+          scopes: openid email profile
+          auth_url: https://login.microsoftonline.com/629ba906-d77e-4dc6-acf3-d71375b281ea/oauth2/v2.0/authorize
+          token_url: https://login.microsoftonline.com/629ba906-d77e-4dc6-acf3-d71375b281ea/oauth2/v2.0/token
+          allowed_organizations: 629ba906-d77e-4dc6-acf3-d71375b281ea
+          allow_assign_grafana_admin: false
+          role_attribute_strict: false
+          skip_org_role_sync: false
+          use_pkce: true
+        #          allowed_groups:
+        smtp:
+          enabled: true
+          host: mail.sis.tv:25
+          skip_verify: true
+          from_address: grafana-monitoring@sis.tv
+
+      ## mount the oauth secrets from csi provider
+      ## and inject as env variables into grafana pod
+      envFromSecrets:
+        - name: grafana-azuread-auth
+      extraVolumeMounts:
+        - name: grafana-secrets
+          mountPath: "/mnt/grafana-secrets"
+      extraVolumes:
+        - name: grafana-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: monitoring-gf-oauth-provider
+
+      # Allow grafana to use PVCs for data persistence
+      # This should use the default storageclass by default
+      persistence:
+        enabled: true
+
+      ## Additional plugins
+      plugins:
+        - yesoreyeram-infinity-datasource
+
+      ## Pre-provisioned datasources
+      ## https://grafana.com/docs/grafana/latest/datasources/prometheus/#provisioning-example
+      datasources:
+        datasources.yaml:
+          apiVersion: 1
+          datasources:
+            - name: prometheus_internal_dev
+              type: prometheus
+              url: https://prometheus.internal.dev.sis.tv
+              access: proxy
+              jsonData:
+                httpMethod: POST
+                prometheusType: Prometheus
+                prometheusVersion: 2.49.0
+                cacheLevel: "Low"
+                disableRecordingRules: false
+            - name: prometheus_internal_uat
+              type: prometheus
+              url: https://prometheus.internal.uat.sis.tv
+              access: proxy
+              jsonData:
+                httpMethod: POST
+                prometheusType: Prometheus
+                prometheusVersion: 2.49.0
+                cacheLevel: "Low"
+                disableRecordingRules: false
+            - name: prometheus_internal_qa
+              type: prometheus
+              url: https://prometheus.internal.qa.sis.tv
+              access: proxy
+              jsonData:
+                httpMethod: POST
+                prometheusType: Prometheus
+                prometheusVersion: 2.49.0
+                cacheLevel: "Low"
+                disableRecordingRules: false
+            - name: prometheus_internal_staging
+              type: prometheus
+              url: https://prometheus.internal.staging.sis.tv
+              access: proxy
+              jsonData:
+                httpMethod: POST
+                prometheusType: Prometheus
+                prometheusVersion: 2.49.0
+                cacheLevel: "Low"
+                disableRecordingRules: false
+            - name: prometheus_internal_prod
+              type: prometheus
+              url: https://prometheus.internal.sis.tv
+              access: proxy
+              jsonData:
+                httpMethod: POST
+                prometheusType: Prometheus
+                prometheusVersion: 2.49.0
+                cacheLevel: "Medium"
+                disableRecordingRules: false
+            - name: prometheus_external_dev
+              type: prometheus
+              url: https://prometheus.external.dev.sis.tv
+              access: proxy
+              jsonData:
+                httpMethod: POST
+                prometheusType: Prometheus
+                prometheusVersion: 2.49.0
+                cacheLevel: "Low"
+                disableRecordingRules: false
+            - name: prometheus_external_uat
+              type: prometheus
+              url: https://prometheus.external.uat.sis.tv
+              access: proxy
+              jsonData:
+                httpMethod: POST
+                prometheusType: Prometheus
+                prometheusVersion: 2.49.0
+                cacheLevel: "Low"
+                disableRecordingRules: false
+            - name: prometheus_external_qa
+              type: prometheus
+              url: https://prometheus.external.qa.sis.tv
+              access: proxy
+              jsonData:
+                httpMethod: POST
+                prometheusType: Prometheus
+                prometheusVersion: 2.49.0
+                cacheLevel: "Low"
+                disableRecordingRules: false
+            - name: prometheus_external_staging
+              type: prometheus
+              url: https://prometheus.external.staging.sis.tv
+              access: proxy
+              jsonData:
+                httpMethod: POST
+                prometheusType: Prometheus
+                prometheusVersion: 2.49.0
+                cacheLevel: "Low"
+                disableRecordingRules: false
+            - name: prometheus_external_prod
+              type: prometheus
+              url: https://prometheus.external.sis.tv
+              access: proxy
+              jsonData:
+                httpMethod: POST
+                prometheusType: Prometheus
+                prometheusVersion: 2.49.0
+                cacheLevel: "Medium"
+                disableRecordingRules: false
+            - name: Azure Monitor
+              type: grafana-azure-monitor-datasource
+              access: proxy
+              version: 1
+              jsonData:
+                azureAuthType: msi

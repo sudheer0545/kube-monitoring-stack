@@ -1,0 +1,43 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 5m
+  install:
+    remediation:
+      retries: 3
+  releaseName: prometheus
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+  values:
+    alertmanager:
+      ingress:
+        enabled: true
+        ingressClassName: nginx    
+    grafana:
+      ingress:
+        enabled: true
+        ingressClassName: nginx
+      persistence:
+        enabled: true
+        storageClassName: managed-csi
+        size: 10Gi
+    prometheus:
+      ingress:
+        enabled: true
+        ingressClassName: nginx
+    prometheusOperator:
+      resources:
+        requests:
+          memory: 30Mi
+          cpu: 10m
+        limits: 
+          memory: 150Mi
+          cpu: 150m

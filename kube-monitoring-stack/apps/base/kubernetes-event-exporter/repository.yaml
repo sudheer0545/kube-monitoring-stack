@@ -1,0 +1,12 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: OCIRepository
+metadata:
+  name: kubernetes-event-exporter
+  namespace: monitoring
+spec:
+  interval: 5m0s
+  provider: azure
+  url: oci://acrsisdev.azurecr.io/helm/kubernetes-event-exporter
+  ref:
+    tag: "3.4.5"

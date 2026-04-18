@@ -1,0 +1,58 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: not-important
+resources:
+  - ../base/prometheus-stack
+  - ../base/blackbox-exporter
+  - ../base/grafana-loki
+  - ../base/grafana-mimir
+  - ../base/grafana-tempo
+  - ../base/kubernetes-event-exporter
+#  - ../base/azure-devops-exporter   #until we move the devops agents to their own node
+patches:
+  - path: prometheus-values.yaml
+    target:
+      group: helm.toolkit.fluxcd.io
+      version: v2beta1
+      kind: HelmRelease
+      name: prometheus-stack
+
+  ## strategic merge any additional scrape configs for prometheus
+  - path: prometheus-scrape-configs.yaml
+
+  - path: blackbox-exporter-values.yaml
+    target:
+      group: helm.toolkit.fluxcd.io
+      version: v2beta1
+      kind: HelmRelease
+      name: blackbox-exporter
+
+  - path: loki-values.yaml
+    target:
+      group: helm.toolkit.fluxcd.io
+      version: v2beta1
+      kind: HelmRelease
+      name: grafana-loki
+
+  - path: mimir-values.yaml
+    target:
+      group: helm.toolkit.fluxcd.io
+      version: v2beta1
+      kind: HelmRelease
+      name: grafana-mimir
+
+  - path: tempo-values.yaml
+    target:
+      group: helm.toolkit.fluxcd.io
+      version: v2beta1
+      kind: HelmRelease
+      name: grafana-tempo
+
+  - path: kubernetes-event-exporter-values.yaml
+    target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: kubernetes-event-exporter

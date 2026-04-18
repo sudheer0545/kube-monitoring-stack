@@ -1,0 +1,31 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: grafana-mimir
+  namespace: monitoring
+spec:
+  interval: 5m
+  install:
+    remediation:
+      retries: 3
+  releaseName: mimir
+  chart:
+    spec:
+      chart: mimir-distributed
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+  values:
+    ## should use the existing alertmanager instance integrated with grafana
+    alertmanager:
+      enabled: false
+
+    ## using Azure storage account rather than s3 bucket
+    minio:
+      enabled: false
+
+    ## nginx reverse proxy is deprecated in chart version > 4.0.0 
+    nginx:
+      enabled: false
+
