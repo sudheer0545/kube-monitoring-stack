@@ -1,0 +1,32 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: prometheus-stack
+  namespace: monitoring
+spec:
+  values:
+    alertmanager:
+      ingress:
+        enabled: false
+
+    prometheus:
+      ingress:
+        enabled: false
+
+    grafana:
+      ingress:
+        enabled: false
+      persistence:
+        enabled: true
+        storageClassName: managed-csi
+        size: 5Gi
+
+    prometheusOperator:
+      resources:
+        requests:
+          memory: 30Mi
+          cpu: 10m
+        limits:
+          memory: 150Mi
+          cpu: 150m

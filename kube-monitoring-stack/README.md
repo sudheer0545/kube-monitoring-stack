@@ -32,6 +32,7 @@
       </ul>
     </li>
     <li><a href="#usage">Usage</a></li>
+    <li><a href="#personal-learning-path-aks--flux--lgtm">Personal Learning Path (AKS + Flux + LGTM)</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#contact">Contact</a></li>
@@ -80,9 +81,50 @@ This repository is structured in typical Flux / Kustomize monorepo fashion - usi
 
 
 <!-- USAGE EXAMPLES -->
-## Usage [TODO]
+## Usage
 
-- [TODO] - Link to common dashboards
+- Follow Flux reconciliation health using:
+  - `flux get sources git`
+  - `flux get kustomizations`
+- Validate monitoring namespace resources:
+  - `kubectl get ns monitoring`
+  - `kubectl get pods -n monitoring`
+
+## Personal Learning Path (AKS + Flux + LGTM)
+
+This repository now includes a learning scaffold for personal AKS environments:
+
+- `/home/runner/work/kube-monitoring-stack/kube-monitoring-stack/kube-monitoring-stack/clusters/personal/dev`
+- `/home/runner/work/kube-monitoring-stack/kube-monitoring-stack/kube-monitoring-stack/infrastructure/personal/dev`
+- `/home/runner/work/kube-monitoring-stack/kube-monitoring-stack/kube-monitoring-stack/apps/personal/dev`
+
+### Phase 1: AKS + Flux + repository structure (no LGTM yet)
+- **What:** bootstrap Flux and reconcile infrastructure first, then apps.
+- **Why:** GitOps reconciliation must be stable before observability components are added.
+- **How to verify:**
+  - `flux get sources git` shows Ready=True
+  - `flux get kustomizations` shows Ready=True for infrastructure and apps
+
+### Phase 2: Start with metrics first (Prometheus + Grafana)
+- **What:** deploy only `prometheus-stack` from `apps/personal/dev`.
+- **Why first:** metrics are the quickest signal for platform health and capacity.
+- **How to verify:**
+  - Prometheus targets are mostly `UP`
+  - Grafana dashboard panels return live node/pod metrics
+  - Alertmanager pod is healthy
+
+### Phase 3+: Expand gradually
+- Add **Loki** next for logs (root-cause analysis).
+- Add **Tempo** after app instrumentation for traces.
+- Add **Mimir** for longer retention and scale-out metrics backend.
+
+### Healthy monitoring checklist
+- Flux sources and kustomizations are Ready=True
+- Monitoring namespace and secrets exist
+- HelmRelease objects are Ready=True
+- No CrashLoopBackOff in monitoring pods
+- Grafana datasources are healthy
+- Prometheus targets remain stable over time
 
 
 
@@ -130,5 +172,4 @@ For any further information about the platform, please contact the Cloud Platfor
 * [kube-prometheus-stack helm chart](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)
 * [Loki helm chart](https://github.com/grafana/loki/tree/main/production/helm/loki)
 * [Mimir helm chart](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed)
-
 
